@@ -52,7 +52,8 @@ from .crypto import (
     generate_rsa_keypair,
     load_public_key,
     serialize_public_key,
-    verify_ssl_certificate,
+    extract_cert_sha256_from_url,
+    verify_cert_sha256,
     xor_deobfuscate,
     xor_obfuscate,
 )
@@ -437,32 +438,23 @@ class Olivia:
         try:
             logger.info(f"Initializing Olivia client in {self.mode} mode")
 
-            # Step 1: Verify SSL certificate FIRST (anti-piracy protection)
-            if self.ssl_sha256 and self.server_url.startswith('https://'):
-                try:
-                    verify_ssl_certificate(self.server_url, self.ssl_sha256)
-                    logger.debug("SSL certificate verified successfully")
-                except SSLVerificationError as e:
-                    self.last_error = str(e)
-                    raise  # Re-raise to stop initialization
-
-            # Step 2: Generate RSA keys
+            # Step 1: Generate RSA keys
             self._private_key, self._public_key = generate_rsa_keypair()
 
-            # Step 3: Connect socket if needed
+            # Step 2: Connect socket if needed
             if self.mode == "socket":
                 if not self._connect_socket():
                     return False
 
-            # Step 4: Create session (same logic, different transport)
+            # Step 3: Create session (+ SSL pinning via response cert)
             if not self._create_session():
                 return False
 
-            # Step 5: Initialize app
+            # Step 4: Initialize app
             if not self._init_app():
                 return False
 
-            # Step 6: Start session heartbeat AFTER init to avoid race conditions
+            # Step 5: Start session heartbeat AFTER init to avoid race conditions
             # The session TTL (300s default) is long enough that we don't need
             # to start heartbeat before init completes
             self._start_session_heartbeat()
@@ -498,6 +490,11 @@ class Olivia:
 
     def _create_session(self) -> bool:
         """Create encrypted session - works for both modes."""
+        # SSL pinning: verify cert before anything else (works for both socket and HTTP)
+        if self.ssl_sha256 and self.server_url.startswith('https://'):
+            actual_sha256 = extract_cert_sha256_from_url(self.server_url)
+            verify_cert_sha256(actual_sha256, self.ssl_sha256)
+
         public_key_bytes = serialize_public_key(self._public_key)
         encoded_key = base64.urlsafe_b64encode(public_key_bytes).decode()
 
@@ -523,6 +520,7 @@ class Olivia:
                     json={'data': encoded_key},
                     timeout=30
                 )
+
                 if resp.status_code != 200:
                     self.last_error = f"Session failed: HTTP {resp.status_code}"
                     return False

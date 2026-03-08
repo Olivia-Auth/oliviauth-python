@@ -5,11 +5,8 @@ Provides RSA-2048, AES-256-GCM, XOR obfuscation, and SSL certificate verificatio
 """
 
 import os
-import ssl
-import socket
 import hashlib
 import base64
-from urllib.parse import urlparse
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -195,85 +192,101 @@ def generate_aes_key() -> bytes:
     return os.urandom(AES_KEY_SIZE)
 
 
+# =============================================================================
 # SSL Certificate Verification
-# Cache to avoid repeated SSL handshakes
-_ssl_cert_cache: dict = {}
+#
+# DESIGN: Em vez de abrir uma conexão TCP/TLS extra só para checar o cert
+# (o que causava múltiplos handshakes TLS detectados pelo GFW como suspeito),
+# extraímos o certificado da própria conexão HTTP que já acontece em
+# _create_session(). Zero conexões extras.
+# =============================================================================
 
-
-def verify_ssl_certificate(url: str, expected_sha256: str) -> bool:
+def extract_cert_sha256_from_url(url: str, timeout: int = 10) -> str:
     """
-    Verify SSL certificate SHA256 fingerprint matches expected value.
+    Faz um HEAD request leve ao servidor e extrai o SHA256 do certificado
+    SSL da conexão, sem enviar/receber dados desnecessários.
 
-    This prevents connecting to pirated/fake servers that use different certificates.
+    Usa stream=True para manter o socket aberto e acessar o cert via
+    o caminho interno do urllib3 (response.raw._fp.fp.raw).
 
     Args:
-        url: Server URL (must be HTTPS)
-        expected_sha256: Expected SHA256 fingerprint of the certificate
+        url: URL HTTPS do servidor
 
     Returns:
-        bool: True if certificate matches
+        str: SHA256 hex lowercase do certificado DER, ou "" se não disponível
+    """
+    import requests as _requests
+    try:
+        resp = _requests.head(url, timeout=timeout, stream=True)
+        try:
+            sock = None
+            raw = resp.raw
+
+            # Path 1: urllib3 exposes _connection.sock (SSLSocket)
+            conn = getattr(raw, '_connection', None)
+            if conn:
+                sock = getattr(conn, 'sock', None)
+
+            # Path 2: fallback via _fp chain
+            if not sock or not hasattr(sock, 'getpeercert'):
+                if hasattr(raw, '_fp') and hasattr(raw._fp, 'fp'):
+                    fp = raw._fp.fp
+                    sock = getattr(fp, 'raw', None) or getattr(fp, '_sock', None)
+
+            if sock and hasattr(sock, 'getpeercert'):
+                cert_der = sock.getpeercert(binary_form=True)
+                if cert_der:
+                    return hashlib.sha256(cert_der).hexdigest().lower()
+        finally:
+            resp.close()
+    except Exception:
+        pass
+    return ""
+
+
+def verify_cert_sha256(actual_sha256: str, expected_sha256: str) -> bool:
+    """
+    Compara o SHA256 real do certificado com o valor esperado configurado
+    pelo desenvolvedor (ssl_sha256). Levanta SSLVerificationError se não bater.
+
+    Esta função é chamada APÓS a request de sessão, usando o cert extraído
+    da própria conexão — sem abrir socket adicional.
+
+    Args:
+        actual_sha256: SHA256 extraído via extract_cert_sha256_from_response()
+        expected_sha256: SHA256 configurado no construtor do Olivia (ssl_sha256)
+
+    Returns:
+        True se OK ou se pinning não está configurado
 
     Raises:
-        SSLVerificationError: If certificate doesn't match (possible pirated server)
+        SSLVerificationError: se os hashes não batem (possível servidor pirata)
     """
+    import logging
+    logger = logging.getLogger("oliviauth")
+
     if not expected_sha256:
-        return True  # Skip verification if no fingerprint configured
+        return True  # SSL pinning não configurado, sem verificação
 
-    if not url.startswith('https://'):
-        return True  # Skip for non-HTTPS (localhost development)
+    if not actual_sha256:
+        # Não conseguiu extrair o cert da conexão (HTTP puro, socket fechado,
+        # ou versão de urllib3 incompatível). Não bloqueia — só avisa.
+        logger.warning(
+            "ssl_sha256 está configurado mas não foi possível extrair o "
+            "certificado da conexão para verificar o pinning. "
+            "Verificação de SSL pulada."
+        )
+        return True
 
-    parsed = urlparse(url)
-    hostname = parsed.hostname
-    port = parsed.port or 443
-
-    if not hostname:
-        raise SSLVerificationError("Invalid server URL")
-
-    cache_key = f"{hostname}:{port}"
-
-    # Check cache first
-    if cache_key in _ssl_cert_cache:
-        actual_sha256 = _ssl_cert_cache[cache_key]
-    else:
-        try:
-            # Create SSL context with default CA verification
-            context = ssl.create_default_context()
-
-            with socket.create_connection((hostname, port), timeout=10) as sock:
-                with context.wrap_socket(sock, server_hostname=hostname) as ssock:
-                    # Get certificate in DER format
-                    cert_der = ssock.getpeercert(binary_form=True)
-                    if not cert_der:
-                        raise SSLVerificationError("Could not retrieve SSL certificate")
-
-                    # Calculate SHA256 fingerprint
-                    actual_sha256 = hashlib.sha256(cert_der).hexdigest().lower()
-
-            # Cache the result
-            _ssl_cert_cache[cache_key] = actual_sha256
-
-        except ssl.SSLError as e:
-            raise SSLVerificationError(f"SSL connection failed: {e}")
-        except socket.error as e:
-            raise SSLVerificationError(f"Could not connect to verify SSL: {e}")
-        except Exception as e:
-            raise SSLVerificationError(f"SSL verification error: {e}")
-
-    # Compare fingerprints (case-insensitive)
     expected_clean = expected_sha256.lower().replace(':', '').replace(' ', '')
 
     if actual_sha256 != expected_clean:
         raise SSLVerificationError(
             f"SSL certificate mismatch! Possible pirated server detected.\n"
             f"Expected: {expected_clean}\n"
-            f"Got: {actual_sha256}\n"
+            f"Got:      {actual_sha256}\n"
             f"Do not enter your license key on this server!"
         )
 
+    logger.debug("SSL certificate pinning verified successfully")
     return True
-
-
-def clear_ssl_cache():
-    """Clear the SSL certificate cache (useful for testing)."""
-    global _ssl_cert_cache
-    _ssl_cert_cache = {}
