@@ -5,14 +5,7 @@ Simple and secure Python SDK for Olivia Auth - Software Licensing Platform.
 ## Installation
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Or install as package
-pip install .
-
-# With WebSocket support (recommended)
-pip install .[websocket]
+pip install oliviauth
 ```
 
 ## Quick Start

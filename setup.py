@@ -1,8 +1,7 @@
 """
 Olivia Auth Python SDK Setup
 
-Install with: pip install .
-Install with WebSocket support: pip install .[websocket]
+Install with: pip install oliviauth
 """
 
 from setuptools import setup, find_packages
@@ -38,12 +37,10 @@ setup(
     install_requires=[
         "requests>=2.28.0",
         "cryptography>=40.0.0",
+        "python-socketio[client]>=5.8.0",
+        "websocket-client>=1.5.0",
     ],
     extras_require={
-        "websocket": [
-            "python-socketio[client]>=5.8.0",
-            "websocket-client>=1.5.0",
-        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
