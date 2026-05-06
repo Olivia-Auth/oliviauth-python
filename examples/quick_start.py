@@ -1,92 +1,40 @@
 """
-Olivia Auth - Quick Start
+OliviaAuth Python quick start.
 
-Minimal example to integrate authentication into your app.
-Everything runs automatically in the background:
-  - Heartbeat (keeps session alive)
-  - Watchdog (kills app if auth is lost - prevents unauthorized usage)
-  - Encryption (all data is encrypted automatically)
-
-Just copy this pattern into your project!
+Place the app-specific OliviaAuth.dll downloaded from the dashboard beside
+your Python entrypoint before running or packaging the app.
 """
 
-from oliviauth import Olivia
+import os
+import sys
 
-# =============================================================================
-# STEP 1: Copy from Dashboard at https://oliviauth.xyz/dashboard
-# =============================================================================
-api = Olivia(
-    owner_id="your_owner_id",
-    app_name="YourApp",
-    version="1.0.0",
-    hash_check="",
-    server_url="https://api.oliviauth.xyz/",
-    ssl_sha256="",
-    client_key="your_client_key",
-    server_key="your_server_key"
-)
-
-# Check if connected to server
-if not api.initialized:
-    print(f"Could not connect to server: {api.last_error}")
-    exit(1)
-
-# =============================================================================
-# STEP 2: Authenticate
-# =============================================================================
-license_key = input("Enter license key: ")
-
-if not api.license(license_key):
-    print(f"Authentication failed: {api.last_error}")
-    api.close()
-    exit(1)
-
-# =============================================================================
-# STEP 3: Check subscription
-# =============================================================================
-if not api.user.has_subscription():
-    print("Your subscription has expired!")
-    api.close()
-    exit(1)
-
-# =============================================================================
-# DONE! Your app is now protected.
-# =============================================================================
-# From this point on:
-#   - Heartbeat runs automatically in background
-#   - If session expires or is killed by admin, app exits automatically
-#   - You don't need to do anything else!
-
-print(f"Welcome {api.user.username}!")
-print(f"Subscription: {api.user.format_time_left()} remaining")
-print()
+from oliviauth import OliviaAuth
 
 
-# =============================================================================
-# YOUR APP CODE BELOW
-# =============================================================================
-# The app will automatically exit if:
-#   - Session expires
-#   - Admin kills the session from dashboard
-#   - License is revoked
-#
-# You can set a callback to run before exit:
-#   api.on_session_expired = lambda: print("Session expired! Closing...")
+def main() -> int:
+    version = os.environ.get("OLIVIA_VERSION", "1.0.0")
+    mode = os.environ.get("OLIVIA_MODE", "socket")
+    key = os.environ.get("OLIVIA_LICENSE_KEY") or input("License key: ").strip()
 
-def main():
-    """Your actual application logic goes here"""
-
-    # Example: simple loop
-    while True:
-        command = input("Your app is running. Type 'quit' to exit: ")
-        if command.lower() == "quit":
-            break
-
-        # Your app logic here...
-
-    # Clean exit
-    api.close()
+    api = None
+    try:
+        api = OliviaAuth(version=version, mode=mode)
+        session = api.license(key)
+        if not session:
+            print(f"Authentication failed: {api.last_error}", file=sys.stderr)
+            return 1
+        if not session.has_subscription():
+            print("No active subscription.", file=sys.stderr)
+            return 1
+        print(f"Welcome {session.username}")
+        return 0
+    except Exception as exc:
+        print(f"OliviaAuth failed: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        if api:
+            api.close()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

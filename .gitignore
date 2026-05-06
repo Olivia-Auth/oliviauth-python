@@ -17,8 +17,10 @@ env/
 # IDE
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
+key.txt
 
 # OS
 .DS_Store
