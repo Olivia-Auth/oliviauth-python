@@ -5,35 +5,51 @@ ctypes bindings for OliviaAuth.dll.
 import ctypes
 import os
 import sys
-from ctypes import c_char_p, c_int, c_size_t
+from ctypes import c_char_p, c_int
+
+try:
+    from . import _olivia_binding
+except Exception:
+    _olivia_binding = None
 
 
 if sys.platform != "win32":
     _lib = None
+    _loaded_path = ""
 else:
     _lib = None
+    _loaded_path = ""
 
     _here = os.path.dirname(os.path.abspath(__file__))
     _bin_dir = os.path.join(_here, "bin")
+    _packaged_dll = os.path.join(_bin_dir, "OliviaAuth.dll")
 
     if os.path.isdir(_bin_dir) and hasattr(os, "add_dll_directory"):
         os.add_dll_directory(_bin_dir)
 
-    _candidates = [
-        os.path.join(os.getcwd(), "OliviaAuth.dll"),
-        os.path.join(os.path.dirname(sys.executable), "OliviaAuth.dll"),
-        os.path.join(_bin_dir, "OliviaAuth.dll"),
-        "OliviaAuth.dll",
-    ]
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        _candidates.insert(0, os.path.join(sys._MEIPASS, "OliviaAuth.dll"))
+    if _olivia_binding is not None:
+        _candidates = [_packaged_dll]
+    else:
+        _candidates = [
+            os.path.join(os.getcwd(), "OliviaAuth.dll"),
+            os.path.join(os.path.dirname(sys.executable), "OliviaAuth.dll"),
+            _packaged_dll,
+            "OliviaAuth.dll",
+        ]
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            _candidates.insert(0, os.path.join(sys._MEIPASS, "OliviaAuth.dll"))
 
     for _path in _candidates:
         try:
+            if _olivia_binding is not None:
+                _olivia_binding.verify(_path)
             _lib = ctypes.CDLL(_path)
+            _loaded_path = _path
             break
         except OSError:
             continue
+        except Exception:
+            raise
 
     if _lib is not None:
         _SessionExpiredCb = ctypes.CFUNCTYPE(None)
@@ -68,6 +84,10 @@ else:
         _lib.olivia_get_app_var.restype = c_int
         _lib.olivia_get_app_var.argtypes = [ctypes.c_void_p, c_char_p, c_char_p, c_int]
 
+        if hasattr(_lib, "olivia_get_all_app_vars"):
+            _lib.olivia_get_all_app_vars.restype = c_int
+            _lib.olivia_get_all_app_vars.argtypes = [ctypes.c_void_p, c_char_p, c_int]
+
         _lib.olivia_has_subscription.restype = c_int
         _lib.olivia_has_subscription.argtypes = [ctypes.c_void_p, c_char_p]
 
@@ -80,20 +100,31 @@ else:
             c_int,
         ]
 
+        if hasattr(_lib, "olivia_webmenu_push_state"):
+            _lib.olivia_webmenu_push_state.restype = c_int
+            _lib.olivia_webmenu_push_state.argtypes = [ctypes.c_void_p, c_char_p]
+
+        if hasattr(_lib, "olivia_heartbeat"):
+            _lib.olivia_heartbeat.restype = c_int
+            _lib.olivia_heartbeat.argtypes = [ctypes.c_void_p]
+
+        if hasattr(_lib, "olivia_subscription_time_left"):
+            _lib.olivia_subscription_time_left.restype = c_int
+            _lib.olivia_subscription_time_left.argtypes = [ctypes.c_void_p, c_char_p, c_char_p, c_int]
+
         _lib.olivia_get_username.restype = c_int
         _lib.olivia_get_username.argtypes = [ctypes.c_void_p, c_char_p, c_int]
 
         _lib.olivia_last_error.restype = c_char_p
         _lib.olivia_last_error.argtypes = [ctypes.c_void_p]
 
-        _lib.olivia_core_generate_hwid.restype = None
-        _lib.olivia_core_generate_hwid.argtypes = [ctypes.c_char_p, c_size_t]
+        _lib.olivia_core_generate_hwid.restype = c_char_p
+        _lib.olivia_core_generate_hwid.argtypes = []
 
 
 def dll_generate_hwid() -> str:
     """Generate the hardware ID via OliviaAuth.dll."""
     if _lib is None:
         return ""
-    buf = ctypes.create_string_buffer(256)
-    _lib.olivia_core_generate_hwid(buf, c_size_t(256))
-    return buf.value.decode("utf-8", errors="replace")
+    value = _lib.olivia_core_generate_hwid()
+    return value.decode("utf-8", errors="replace") if value else ""

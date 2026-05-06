@@ -23,8 +23,7 @@ def _require_dll():
     if _lib is None:
         raise RuntimeError(
             "OliviaAuth.dll could not be loaded. "
-            "Place OliviaAuth.dll (and vxlib64.dll) in oliviauth/bin/ "
-            "or ensure they are on PATH."
+            "Install the app-specific OliviaAuth wheel from the dashboard."
         )
 
 
@@ -82,6 +81,20 @@ class OliviaSession:
         except json.JSONDecodeError:
             return raw
 
+    def get_all_app_vars(self) -> dict:
+        if not hasattr(_lib, "olivia_get_all_app_vars"):
+            return {}
+        buf = create_string_buffer(_BUF_LARGE)
+        n = _lib.olivia_get_all_app_vars(self._handle, buf, _BUF_LARGE)
+        if n < 0:
+            return {}
+        raw = buf.value.decode("utf-8", errors="replace")
+        try:
+            value = json.loads(raw)
+            return value if isinstance(value, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+
     # ------------------------------------------------------------------
     # Webhooks
     # ------------------------------------------------------------------
@@ -95,6 +108,23 @@ class OliviaSession:
             buf,
             _BUF_LARGE,
         )
+        return buf.value.decode("utf-8", errors="replace") if n >= 0 else ""
+
+    def webmenu_push_state(self, values: dict) -> bool:
+        if not hasattr(_lib, "olivia_webmenu_push_state"):
+            return False
+        return bool(_lib.olivia_webmenu_push_state(self._handle, json.dumps(values).encode()))
+
+    def heartbeat(self) -> bool:
+        if not hasattr(_lib, "olivia_heartbeat"):
+            return False
+        return bool(_lib.olivia_heartbeat(self._handle))
+
+    def subscription_time_left(self, level: str = "") -> str:
+        if not hasattr(_lib, "olivia_subscription_time_left"):
+            return ""
+        buf = create_string_buffer(_BUF)
+        n = _lib.olivia_subscription_time_left(self._handle, level.encode(), buf, _BUF)
         return buf.value.decode("utf-8", errors="replace") if n >= 0 else ""
 
     # ------------------------------------------------------------------
@@ -114,8 +144,8 @@ class OliviaAuth:
     """
     Public protected-DLL API.
 
-    Requires an app-specific OliviaAuth.dll beside the Python app. That DLL is
-    downloaded from the OliviaAuth dashboard and contains the app configuration.
+    Requires the app-specific OliviaAuth wheel from the dashboard. The packaged
+    DLL contains the app configuration.
     """
 
     def __init__(
@@ -196,6 +226,11 @@ class OliviaAuth:
             raise RuntimeError("Not authenticated; call license() or login() first.")
         return self._session.get_app_var(name)
 
+    def get_all_app_vars(self) -> dict:
+        if not self._session:
+            raise RuntimeError("Not authenticated; call license() or login() first.")
+        return self._session.get_all_app_vars()
+
     def has_subscription(self, level: str = "") -> bool:
         if not self._session:
             return False
@@ -205,6 +240,16 @@ class OliviaAuth:
         if not self._session:
             raise RuntimeError("Not authenticated; call license() or login() first.")
         return self._session.webhook(webhook_id, payload)
+
+    def webmenu_push_state(self, values: dict) -> bool:
+        if not self._session:
+            return False
+        return self._session.webmenu_push_state(values)
+
+    def heartbeat(self) -> bool:
+        if not self._session:
+            return False
+        return self._session.heartbeat()
 
     # ------------------------------------------------------------------
     # Properties

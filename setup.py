@@ -11,7 +11,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="oliviauth",
-    version="1.0.2",
+    version="1.0.3",
     author="Olivia Auth",
     author_email="support@oliviauth.com",
     description="Python SDK for Olivia Auth - Software Licensing Platform",
@@ -19,7 +19,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/Olivia-Auth/oliviauth-python",
     packages=find_packages(),
-    package_data={"oliviauth": ["bin/*.dll"]},
+    package_data={"oliviauth": ["*.pyd"]},
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",

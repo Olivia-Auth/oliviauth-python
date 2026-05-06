@@ -1,8 +1,8 @@
 """
 OliviaAuth Python quick start.
 
-Place the app-specific OliviaAuth.dll downloaded from the dashboard beside
-your Python entrypoint before running or packaging the app.
+Install the app-specific OliviaAuth wheel downloaded from the dashboard before
+running or packaging the app.
 """
 
 import os

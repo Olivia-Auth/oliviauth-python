@@ -11,12 +11,19 @@ Python SDK for Olivia Auth protected apps.
 ## Install
 
 ```bash
-pip install oliviauth
+pip install .\oliviauth-1.0.3+yourapp-cp38-abi3-win_amd64.whl
 ```
 
-Put `OliviaAuth.dll` beside your Python entrypoint. The DLL already contains
-the app owner, app name, server URL, encryption keys, and SSL pin. Your code
+Download this wheel from the OliviaAuth dashboard for the selected app. It
+already contains the matching `OliviaAuth.dll` and native binding, so your code
 only passes `version` and `mode`.
+
+The PyPI package is useful for development/reference installs. Customer builds
+should use the dashboard wheel because it binds the Python package to that
+app's DLL.
+
+This public repository does not ship a production `OliviaAuth.dll`; the
+dashboard wheel is generated per app.
 
 ## Quick Start
 
@@ -42,11 +49,12 @@ apps.
 
 ```text
 your_app.exe or your_app.py
-OliviaAuth.dll
+oliviauth package installed from the dashboard wheel
 ```
 
 Do not put `owner_id`, `client_key`, `server_key`, server URL, SSL pin, or HWID
-code in the customer app. The DLL handles that internally.
+code in the customer app. The wheel/DLL handles that internally and rejects a
+DLL generated for another app.
 
 ## License Auth
 
@@ -104,9 +112,9 @@ errors raise `RuntimeError` with the underlying OliviaAuth message.
 
 | Error | Fix |
 |-------|-----|
-| `OliviaAuth.dll could not be loaded` | Put the app-specific DLL beside the app or on PATH |
-| `OliviaAuth.dll is not configured for this app` | Download the DLL from the dashboard for this app |
-| SSL pin / certificate error | Download a fresh DLL after the dashboard updates the pin |
+| `OliviaAuth.dll could not be loaded` | Install the app-specific dashboard wheel |
+| `OliviaAuth.dll is not configured for this app` | Download the wheel from the dashboard for this app |
+| SSL pin / certificate error | Download a fresh wheel after the dashboard updates the pin |
 | `HWID mismatch` | Reset the user's HWID in the dashboard |
 | `Version mismatch` | Update the app version in code or dashboard |
 
@@ -129,5 +137,5 @@ The `examples/` folder uses the protected DLL flow:
 OliviaShield protects your compiled app and returns a bundle containing the
 protected executable plus `OliviaAuth.dll`.
 
-For local testing, download `OliviaAuth.dll` from the app settings page and run
-your app beside that DLL before sending the executable through Shield.
+For local testing, install the dashboard wheel and run your app before sending
+the executable through Shield.
