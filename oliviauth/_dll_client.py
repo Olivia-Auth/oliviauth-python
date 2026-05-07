@@ -5,6 +5,8 @@ Wraps OliviaAuth.dll via the public olivia_* C ABI (oliviauth_c.h).
 Uses a context-based API that returns opaque session handles.
 """
 
+from __future__ import annotations
+
 import json
 import sys
 from ctypes import create_string_buffer, CFUNCTYPE
@@ -180,14 +182,18 @@ class OliviaAuth:
     # Authentication
     # ------------------------------------------------------------------
 
-    def license(self, key: str, hwid: str = "") -> OliviaSession | None:
+    def license(self, key: str, hwid: str | None = None) -> OliviaSession | None:
         """
         Authenticate with a license key.
+
+        Leave ``hwid`` as ``None`` to let OliviaAuth.dll generate it. Pass
+        ``hwid=""`` only when the app intentionally authenticates without HWID.
 
         Returns an :class:`OliviaSession` on success, ``None`` on failure.
         The returned session is truthy; ``if session:`` works as expected.
         """
-        handle = _lib.olivia_license(self._ctx, key.encode(), hwid.encode())
+        encoded_hwid = None if hwid is None else hwid.encode()
+        handle = _lib.olivia_license(self._ctx, key.encode(), encoded_hwid)
         if not handle:
             return None
         self._session = OliviaSession(handle, self._ctx)
@@ -197,19 +203,23 @@ class OliviaAuth:
         self,
         username: str,
         password: str,
-        hwid: str = "",
+        hwid: str | None = None,
         twofa: str = "",
     ) -> OliviaSession | None:
         """
         Authenticate with username + password.
 
+        Leave ``hwid`` as ``None`` to let OliviaAuth.dll generate it. Pass
+        ``hwid=""`` only when the app intentionally authenticates without HWID.
+
         Returns an :class:`OliviaSession` on success, ``None`` on failure.
         """
+        encoded_hwid = None if hwid is None else hwid.encode()
         handle = _lib.olivia_login(
             self._ctx,
             username.encode(),
             password.encode(),
-            hwid.encode(),
+            encoded_hwid,
             twofa.encode(),
         )
         if not handle:

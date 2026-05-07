@@ -16,7 +16,8 @@ pip install .\oliviauth-1.0.3+yourapp-cp38-abi3-win_amd64.whl
 
 Download this wheel from the OliviaAuth dashboard for the selected app. It
 already contains the matching `OliviaAuth.dll` and native binding, so your code
-only passes `version` and `mode`.
+only passes `version` and `mode`. Dashboard wheels include an app-specific
+OliviaAuth.dll protected by OliviaShield/VxLang.
 
 The PyPI package is useful for development/reference installs. Customer builds
 should use the dashboard wheel because it binds the Python package to that
@@ -92,7 +93,8 @@ print(session.username)
 api.close()
 ```
 
-HWID is generated inside `OliviaAuth.dll` when you do not pass one.
+HWID is generated inside `OliviaAuth.dll` when you do not pass one. Passing
+`hwid=""` intentionally authenticates without HWID.
 
 ## App Variables
 

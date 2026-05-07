@@ -26,7 +26,16 @@ def main() -> int:
         if not session.has_subscription():
             print("No active subscription.", file=sys.stderr)
             return 1
-        print(f"Welcome {session.username}")
+        app_vars = session.get_all_app_vars()
+        welcome = session.get_app_var("welcome_message")
+
+        print("\nAuthentication OK")
+        print(f"User: {session.username}")
+        print(f"Subscription active: {'yes' if session.has_subscription() else 'no'}")
+        print(f"Time left: {session.subscription_time_left()}")
+        print(f"App vars loaded: {len(app_vars)}")
+        if welcome is not None:
+            print(f"Message: {welcome}")
         return 0
     except Exception as exc:
         print(f"OliviaAuth failed: {exc}", file=sys.stderr)

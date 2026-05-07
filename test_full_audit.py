@@ -28,8 +28,9 @@ def require_env(name: str) -> str:
 def auth_round(mode: str, license_key: str, version: str) -> bool:
     api = OliviaAuth(version=version, mode=mode)
     try:
+        ok = check(bool(api.hwid), f"{mode} DLL-generated HWID is available")
         session = api.license(license_key)
-        ok = check(session is not None, f"{mode} license() returned a session")
+        ok &= check(session is not None, f"{mode} license() returned a session")
         if not session:
             print(f"    last_error: {api.last_error}")
             return False
