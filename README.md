@@ -16,8 +16,8 @@ pip install .\oliviauth-1.0.3+yourapp-cp38-abi3-win_amd64.whl
 
 Download this wheel from the OliviaAuth dashboard for the selected app. It
 already contains the matching `OliviaAuth.dll` and native binding, so your code
-only passes `version` and `mode`. Dashboard wheels include an app-specific
-OliviaAuth.dll protected by OliviaShield/VxLang.
+only passes `version` and credentials. Dashboard wheels include an app-specific
+OliviaAuth.dll generated and bound by OliviaShield.
 
 The PyPI package is useful for development/reference installs. Customer builds
 should use the dashboard wheel because it binds the Python package to that
@@ -43,8 +43,8 @@ print(f"Welcome {session.username}")
 api.close()
 ```
 
-`mode` can be `"socket"` or `"http"`. Socket mode is recommended for desktop
-apps.
+`mode` is accepted for API compatibility. App-specific dashboard DLLs currently
+own the runtime transport configuration internally.
 
 ## What The Customer Ships
 
@@ -82,7 +82,7 @@ api.close()
 ```python
 from oliviauth import OliviaAuth
 
-api = OliviaAuth(version="1.0.0", mode="http")
+api = OliviaAuth(version="1.0.0", mode="socket")
 
 session = api.login("username", "password")
 if not session:

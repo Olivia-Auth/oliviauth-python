@@ -12,7 +12,7 @@ import sys
 from ctypes import create_string_buffer, CFUNCTYPE
 from typing import Callable, Optional
 
-from ._ffi import _lib, dll_generate_hwid
+from ._ffi import _lib, _load_error, _native, dll_generate_hwid
 
 _SessionExpiredCb = CFUNCTYPE(None)
 
@@ -22,11 +22,11 @@ _BUF_LARGE = 65536
 
 
 def _require_dll():
-    if _lib is None:
-        raise RuntimeError(
-            "OliviaAuth.dll could not be loaded. "
-            "Install the app-specific OliviaAuth wheel from the dashboard."
-        )
+    if _native is None and _lib is None:
+        message = "OliviaAuth.dll could not be loaded. Install the app-specific OliviaAuth wheel from the dashboard."
+        if _load_error:
+            message += f"\n{_load_error}"
+        raise RuntimeError(message)
 
 
 class OliviaSession:
@@ -61,11 +61,15 @@ class OliviaSession:
 
     @property
     def username(self) -> str:
+        if _native is not None:
+            return _native.get_username(self._handle)
         buf = create_string_buffer(_BUF)
         n = _lib.olivia_get_username(self._handle, buf, _BUF)
         return buf.value.decode("utf-8", errors="replace") if n > 0 else ""
 
     def has_subscription(self, level: str = "") -> bool:
+        if _native is not None:
+            return bool(_native.has_subscription(self._handle, level))
         return bool(_lib.olivia_has_subscription(self._handle, level.encode()))
 
     # ------------------------------------------------------------------
@@ -73,6 +77,12 @@ class OliviaSession:
     # ------------------------------------------------------------------
 
     def get_app_var(self, name: str):
+        if _native is not None:
+            raw = _native.get_app_var(self._handle, name)
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                return raw
         buf = create_string_buffer(_BUF)
         n = _lib.olivia_get_app_var(self._handle, name.encode(), buf, _BUF)
         if n < 0:
@@ -84,6 +94,13 @@ class OliviaSession:
             return raw
 
     def get_all_app_vars(self) -> dict:
+        if _native is not None:
+            raw = _native.get_all_app_vars(self._handle)
+            try:
+                value = json.loads(raw)
+                return value if isinstance(value, dict) else {}
+            except json.JSONDecodeError:
+                return {}
         if not hasattr(_lib, "olivia_get_all_app_vars"):
             return {}
         buf = create_string_buffer(_BUF_LARGE)
@@ -102,6 +119,8 @@ class OliviaSession:
     # ------------------------------------------------------------------
 
     def webhook(self, webhook_id: str, payload: str = "{}") -> str:
+        if _native is not None:
+            return _native.webhook(self._handle, webhook_id, payload)
         buf = create_string_buffer(_BUF_LARGE)
         n = _lib.olivia_webhook(
             self._handle,
@@ -113,16 +132,22 @@ class OliviaSession:
         return buf.value.decode("utf-8", errors="replace") if n >= 0 else ""
 
     def webmenu_push_state(self, values: dict) -> bool:
+        if _native is not None:
+            return bool(_native.webmenu_push_state(self._handle, json.dumps(values)))
         if not hasattr(_lib, "olivia_webmenu_push_state"):
             return False
         return bool(_lib.olivia_webmenu_push_state(self._handle, json.dumps(values).encode()))
 
     def heartbeat(self) -> bool:
+        if _native is not None:
+            return bool(_native.heartbeat(self._handle))
         if not hasattr(_lib, "olivia_heartbeat"):
             return False
         return bool(_lib.olivia_heartbeat(self._handle))
 
     def subscription_time_left(self, level: str = "") -> str:
+        if _native is not None:
+            return _native.subscription_time_left(self._handle, level)
         if not hasattr(_lib, "olivia_subscription_time_left"):
             return ""
         buf = create_string_buffer(_BUF)
@@ -135,6 +160,8 @@ class OliviaSession:
 
     @property
     def last_error(self) -> str:
+        if _native is not None:
+            return _native.last_error(self._ctx)
         err = _lib.olivia_last_error(self._ctx)
         return err.decode("utf-8", errors="replace") if err else ""
 
@@ -164,17 +191,24 @@ class OliviaAuth:
         self._session: OliviaSession | None = None
         self._expired_cb_ref = None
 
-        cb = _SessionExpiredCb(on_session_expired) if on_session_expired else _SessionExpiredCb(lambda: None)
-        self._expired_cb_ref = cb
-        ctx = _lib.olivia_init_ex(
-            b"", b"", version.encode(),
-            b"", b"", b"",
-            mode.encode(), cb,
-        )
+        if _native is not None:
+            self._expired_cb_ref = on_session_expired
+            ctx = _native.init(version, mode, on_session_expired)
+        else:
+            cb = _SessionExpiredCb(on_session_expired) if on_session_expired else _SessionExpiredCb(lambda: None)
+            self._expired_cb_ref = cb
+            ctx = _lib.olivia_init_ex(
+                None, None, version.encode(),
+                None, None, None,
+                None, cb,
+            )
 
         if not ctx:
-            err = _lib.olivia_last_error(None)
-            msg = err.decode("utf-8", errors="replace") if err else "unknown"
+            if _native is not None:
+                msg = _native.last_error(None) or "unknown"
+            else:
+                err = _lib.olivia_last_error(None)
+                msg = err.decode("utf-8", errors="replace") if err else "unknown"
             raise RuntimeError(f"OliviaAuth init failed: {msg}")
         self._ctx = ctx
 
@@ -192,8 +226,11 @@ class OliviaAuth:
         Returns an :class:`OliviaSession` on success, ``None`` on failure.
         The returned session is truthy; ``if session:`` works as expected.
         """
-        encoded_hwid = None if hwid is None else hwid.encode()
-        handle = _lib.olivia_license(self._ctx, key.encode(), encoded_hwid)
+        if _native is not None:
+            handle = _native.license(self._ctx, key, hwid)
+        else:
+            encoded_hwid = None if hwid is None else hwid.encode()
+            handle = _lib.olivia_license(self._ctx, key.encode(), encoded_hwid)
         if not handle:
             return None
         self._session = OliviaSession(handle, self._ctx)
@@ -214,14 +251,17 @@ class OliviaAuth:
 
         Returns an :class:`OliviaSession` on success, ``None`` on failure.
         """
-        encoded_hwid = None if hwid is None else hwid.encode()
-        handle = _lib.olivia_login(
-            self._ctx,
-            username.encode(),
-            password.encode(),
-            encoded_hwid,
-            twofa.encode(),
-        )
+        if _native is not None:
+            handle = _native.login(self._ctx, username, password, hwid, twofa)
+        else:
+            encoded_hwid = None if hwid is None else hwid.encode()
+            handle = _lib.olivia_login(
+                self._ctx,
+                username.encode(),
+                password.encode(),
+                encoded_hwid,
+                twofa.encode(),
+            )
         if not handle:
             return None
         self._session = OliviaSession(handle, self._ctx)
@@ -271,6 +311,8 @@ class OliviaAuth:
 
     @property
     def last_error(self) -> str:
+        if _native is not None:
+            return _native.last_error(self._ctx)
         err = _lib.olivia_last_error(self._ctx)
         return err.decode("utf-8", errors="replace") if err else ""
 
@@ -285,7 +327,10 @@ class OliviaAuth:
     def close(self) -> None:
         """Release DLL resources (call on application exit)."""
         if self._ctx:
-            _lib.olivia_free(self._ctx)
+            if _native is not None:
+                _native.free(self._ctx)
+            else:
+                _lib.olivia_free(self._ctx)
             self._ctx = None
             self._session = None
 

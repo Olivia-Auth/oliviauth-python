@@ -2,7 +2,9 @@
 Olivia Auth Python SDK
 
 A simple, secure authentication SDK for Olivia Auth - Software Licensing Platform.
-Supports both HTTP and WebSocket modes with identical API.
+The dashboard wheel contains an app-specific OliviaAuth.dll. The DLL owns
+transport configuration internally; the mode parameter is accepted for API
+compatibility.
 
 Quick Start:
     >>> from oliviauth import OliviaAuth
@@ -35,8 +37,17 @@ from .exceptions import (
 try:
     from ._dll_client import OliviaAuth, OliviaSession
     _has_dll = True
-except Exception:
+    _dll_import_error = None
+except Exception as exc:
+    _dll_import_error = exc
     _has_dll = False
+
+    class OliviaSession:
+        """Placeholder used when the protected DLL client cannot be loaded."""
+
+    class OliviaAuth:
+        def __init__(self, *_, **__):
+            raise RuntimeError(f"OliviaAuth DLL mode unavailable: {_dll_import_error}")
 
 __all__ = [
     "OliviaAuthError",
@@ -56,5 +67,4 @@ __all__ = [
     "VPNBlockedError",
 ]
 
-if _has_dll:
-    __all__ = ["OliviaAuth", "OliviaSession"] + __all__
+__all__ = ["OliviaAuth", "OliviaSession"] + __all__
